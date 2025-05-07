@@ -8,14 +8,13 @@ import (
 )
 
 func ReadMessage(conn net.Conn) ([]byte, error) {
-	var (
-		lng uint64
-		res []byte
-	)
+	var lng uint64
 
 	if err := binary.Read(conn, binary.BigEndian, &lng); err != nil {
 		return nil, fmt.Errorf("binary reading message: %w", err)
 	}
+
+	res := make([]byte, lng)
 
 	if _, err := io.ReadFull(conn, res); err != nil {
 		return nil, fmt.Errorf("reading message: %w", err)

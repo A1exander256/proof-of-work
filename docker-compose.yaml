@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: ./build/Dokerfile-server
+    ports:
+      - "8081:8080"
+    env_file:
+      - .env
+    networks:
+      - pow-net
+
+  client:
+    build:
+      context: .
+      dockerfile: ./build/Dokerfile-client
+    env_file:
+      - .env
+    networks:
+      - pow-net
+
+
+networks:
+  pow-net:
+    driver: bridge

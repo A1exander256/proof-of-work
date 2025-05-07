@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"go.uber.org/zap"
 	"net"
+	"sync"
+	"time"
 
-	"github.com/proof-of-work/internal/service/quote"
+	quoteclient "github.com/proof-of-work/internal/service/client/quote"
+	quoteserver "github.com/proof-of-work/internal/service/server/quote"
 )
 
 func (b *Builder) RunTCPServer(ctx context.Context) error {
@@ -16,7 +19,7 @@ func (b *Builder) RunTCPServer(ctx context.Context) error {
 		KeepAlive: b.cfg.Server.KeepAlive,
 	}
 
-	addr := fmt.Sprintf("%s:%d", b.cfg.Server.Host, b.cfg.Server.Port)
+	addr := b.cfg.Address()
 
 	ln, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
@@ -26,8 +29,6 @@ func (b *Builder) RunTCPServer(ctx context.Context) error {
 	b.shutdown.addWithCtxE(ln.Close)
 
 	b.l.Info("server started", zap.String("address", addr))
-
-	quoteFn := b.newQuoteHandleFn()
 
 	go func() {
 		for {
@@ -47,7 +48,16 @@ func (b *Builder) RunTCPServer(ctx context.Context) error {
 				}
 
 				go func() {
-					if err := quoteFn(ctx, conn); err != nil {
+					defer conn.Close() //nolint:errcheck
+
+					if err := conn.SetDeadline(time.Now().Add(b.cfg.Server.Deadline)); err != nil {
+						b.l.Error("failed to set deadline", zap.Error(err))
+
+						return
+					}
+
+					fn := b.newQuoteHandleFn(conn)
+					if err := fn(ctx); err != nil {
 						b.l.Error("failed to handle quote", zap.Error(err))
 					}
 				}()
@@ -58,10 +68,58 @@ func (b *Builder) RunTCPServer(ctx context.Context) error {
 	return nil
 }
 
-type handlerFn func(ctx context.Context, conn net.Conn) error
+func (b *Builder) RunTCPClient(ctx context.Context) error {
+	const maxConns = 50
 
-func (b *Builder) newQuoteHandleFn() handlerFn {
-	s := quote.NewService(b.l, b.cfg.Server.Deadline, b.cfg.Pow.Difficulty, b.QuoteRepo())
+	var (
+		wp = make(chan struct{}, maxConns)
+		wg = sync.WaitGroup{}
+	)
+
+	for range b.cfg.Client.RequestCount {
+		wp <- struct{}{}
+
+		wg.Add(1)
+
+		go func() {
+			defer func() {
+				<-wp
+				wg.Done()
+			}()
+
+			var d net.Dialer
+
+			conn, err := d.DialContext(ctx, "tcp", b.cfg.Address())
+			if err != nil {
+				b.l.Error("failed to connect to client", zap.Error(err))
+
+				return
+			}
+
+			defer conn.Close() //nolint:errcheck
+
+			srv := quoteclient.NewService(b.l, conn)
+
+			res, err := srv.GetQuote(ctx)
+			if err != nil {
+				b.l.Error("failed to get quote", zap.Error(err))
+
+				return
+			}
+
+			b.l.Info("got quote", zap.String("quote", res))
+		}()
+	}
+
+	wg.Wait()
+
+	return nil
+}
+
+type handlerFn func(ctx context.Context) error
+
+func (b *Builder) newQuoteHandleFn(conn net.Conn) handlerFn {
+	s := quoteserver.NewService(b.l, conn, b.cfg.Pow.Difficulty, b.QuoteRepo())
 
 	return s.Handle
 }

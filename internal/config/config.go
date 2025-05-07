@@ -14,6 +14,7 @@ import (
 type Config struct {
 	App    App
 	Server Server
+	Client Client
 	Pow    Pow
 }
 
@@ -22,14 +23,22 @@ type App struct {
 }
 
 type Server struct {
-	Host      string        `envconfig:"SERVER_HOST"                   validate:"required"`
-	Port      int           `envconfig:"SERVER_PORT"                   validate:"required"`
-	KeepAlive time.Duration `envconfig:"SERVER_KEEP_ALIVE,default=10s" validate:"min=10s"`
-	Deadline  time.Duration `envconfig:"SERVER_DEADLINE,default=10s"   validate:"min=1s"`
+	Host      string        `envconfig:"SERVER_HOST"       validate:"required"`
+	Port      int           `envconfig:"SERVER_PORT"       validate:"required"`
+	KeepAlive time.Duration `envconfig:"SERVER_KEEP_ALIVE" validate:"min=1s"`
+	Deadline  time.Duration `envconfig:"SERVER_DEADLINE"   validate:"min=1s"`
 }
 
 type Pow struct {
 	Difficulty uint8 `envconfig:"POW_DIFFICULTY" validate:"min=10"`
+}
+
+type Client struct {
+	RequestCount uint8 `envconfig:"CLIENT_REQUEST_COUNT" validate:"min=1"`
+}
+
+func (cfg *Config) Address() string {
+	return fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 }
 
 func Parse() (Config, error) {
@@ -39,7 +48,7 @@ func Parse() (Config, error) {
 		return cfg, fmt.Errorf("reading .env file: %w", err)
 	}
 
-	if err := envconfig.Process("", cfg); err != nil {
+	if err := envconfig.Process("", &cfg); err != nil {
 		return cfg, fmt.Errorf("reading environments: %w", err)
 	}
 

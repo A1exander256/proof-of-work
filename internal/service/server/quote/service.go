@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go.uber.org/zap"
 	"net"
-	"time"
 
 	"github.com/proof-of-work/pkg/logger"
 	powlib "github.com/proof-of-work/pkg/pow"
@@ -19,7 +18,8 @@ type repo interface {
 type Service struct {
 	l *logger.Logger
 
-	deadline   time.Duration
+	conn net.Conn
+
 	difficulty uint8
 
 	r repo
@@ -27,26 +27,20 @@ type Service struct {
 
 func NewService(
 	l *logger.Logger,
-	deadline time.Duration,
+	conn net.Conn,
 	difficulty uint8,
 	r repo,
 ) *Service {
 	return &Service{
 		l:          l,
-		deadline:   deadline,
+		conn:       conn,
 		difficulty: difficulty,
 		r:          r,
 	}
 }
 
-func (s *Service) Handle(ctx context.Context, conn net.Conn) error {
-	defer conn.Close() //nolint:errcheck
-
-	if err := conn.SetDeadline(time.Now().Add(s.deadline)); err != nil {
-		return fmt.Errorf("setting deadline: %w", err)
-	}
-
-	s.l.Debug("New connection", zap.String("remote", conn.RemoteAddr().String()))
+func (s *Service) Handle(ctx context.Context) error {
+	s.l.Debug("New connection", zap.String("remote", s.conn.RemoteAddr().String()))
 
 	pow := powlib.NewPOW(s.difficulty)
 
@@ -55,11 +49,11 @@ func (s *Service) Handle(ctx context.Context, conn net.Conn) error {
 		return fmt.Errorf("cteating challenge: %w", err)
 	}
 
-	if err := tcputils.WriteMessage(conn, challenge); err != nil {
+	if err := tcputils.WriteMessage(s.conn, challenge); err != nil {
 		return fmt.Errorf("writing challenge: %w", err)
 	}
 
-	solution, err := tcputils.ReadMessage(conn)
+	solution, err := tcputils.ReadMessage(s.conn)
 	if err != nil {
 		return fmt.Errorf("reading solution: %w", err)
 	}
@@ -67,19 +61,21 @@ func (s *Service) Handle(ctx context.Context, conn net.Conn) error {
 	if !pow.Verify(solution) {
 		msg := []byte("Invalid proof of work")
 
-		if err := tcputils.WriteMessage(conn, msg); err != nil {
+		if err := tcputils.WriteMessage(s.conn, msg); err != nil {
 			return fmt.Errorf("writing error: %w", err)
 		}
+
+		return nil
 	}
 
-	s.l.Debug("Solution verified", zap.String("remote", conn.RemoteAddr().String()))
+	s.l.Debug("Solution verified", zap.String("remote", s.conn.RemoteAddr().String()))
 
 	quote, err := s.r.GetQuote(ctx)
 	if err != nil {
 		return fmt.Errorf("getting quote from repo: %w", err)
 	}
 
-	if err := tcputils.WriteMessage(conn, []byte(quote)); err != nil {
+	if err := tcputils.WriteMessage(s.conn, []byte(quote)); err != nil {
 		return fmt.Errorf("writing quote: %w", err)
 	}
 
