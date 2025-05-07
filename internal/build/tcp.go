@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.uber.org/zap"
 	"net"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 
 	quoteclient "github.com/proof-of-work/internal/service/client/quote"
 	quoteserver "github.com/proof-of-work/internal/service/server/quote"
