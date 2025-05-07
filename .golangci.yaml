@@ -1,0 +1,91 @@
+version: 2
+
+run:
+  go: "1.24"
+  concurrency: 4
+  timeout: 10m
+  issues-exit-code: 0
+  tests: true
+  build-tags: [ ]
+  allow-parallel-runners: false
+
+output:
+  format: tab
+  print-issued-lines: true
+  print-linter-name: true
+  path-prefix: ""
+  sort-results: false
+
+linters:
+  default: all
+
+  settings:
+    lll:
+      enable-all-rules: true
+      line-length: 120
+
+    nestif:
+      min-complexity: 10
+
+    cyclop:
+      max-complexity: 20
+
+    funlen:
+      lines: 80
+
+    revive:
+      enable-all-rules: true
+      rules:
+        - name: argument-limit
+          arguments: [ 10 ]
+        - name: line-length-limit
+          arguments: [ 120 ]
+        - name: function-length
+          arguments: [ 80, 0 ]
+
+        - name: package-comments
+          disabled: true
+        - name: exported
+          disabled: true
+        - name: add-constant
+          disabled: true
+        - name: max-public-structs
+          disabled: true
+        - name: if-return
+          disabled: true
+        - name: nested-structs
+          disabled: true
+        - name: cognitive-complexity
+          disabled: true
+        - name: cyclomatic
+          disabled: true
+
+    tagliatelle:
+      enable-all-rules: true
+      case:
+        rules:
+          json: snake
+          yaml: snake
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - testpackage
+          - paralleltest
+          - tparallel
+          - funlen
+          - exhaustruct
+          - errcheck
+          - err113
+          - staticcheck
+
+  disable:
+    - wrapcheck
+    - wastedassign
+    - varnamelen
+    - nonamedreturns
+    - mnd
+    - ireturn
+    - gochecknoglobals
+    - depguard
